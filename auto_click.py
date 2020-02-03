@@ -33,7 +33,9 @@ class KeyboardAction(Action):
             exit("Invalid keyboard action. Expect 1 key " + name)
 
     def execute(self, verbose=False):
-        pyautogui.press(self.name)
+        mouse_x, mouse_y = pyautogui.position()
+        pyautogui.press(self.name, pause=0.1)
+        pyautogui.position(mouse_x, mouse_y)
         if verbose:
             print("keyboard", self.name, "delay", self.delay)
         time.sleep(self.delay)
@@ -51,6 +53,7 @@ class Application(tk.Frame):
         self.cps = 8    # Clicks Per Second
         self.is_start = False
         self.is_quit = False
+        self.sequence_filename = "auto_click.txt"
 
         bt_down = tk.Button(self, text="<<", command=self.command_down)
         bt_down.pack(side="left")
@@ -69,6 +72,50 @@ class Application(tk.Frame):
 
         self.click_thread = threading.Thread(target=self.my_click_thread_function)
         self.click_thread.start()
+
+    def load_auto_click_sequence(self, filename) -> list:
+        """
+        Support line format:
+        m:left:0.1
+        m:left
+        k: :0.2
+        k:ab
+        :param filename:
+        :return:
+        """
+
+        # noinspection PyBroadException
+        action_sequence = list()
+        with open(filename) as fh:
+            for line_num, line in enumerate(fh):
+                delay = 1.0 / self.cps  # default delay time
+                line = line.strip()
+                if line.startswith("#"):
+                    continue
+                if line.startswith("m:"):
+                    arr = line.split(":")
+                    if len(arr) > 1 and arr[1] in ["left", "middle", "right"]:
+                        if len(arr) > 2:
+                            val = arr[2].strip()
+                            if len(val):
+                                delay = float(arr[2])
+                        action_sequence.append(MouseAction(arr[1], delay))
+                    else:
+                        print("Error at line", line_num, line)
+                elif line.startswith("k:"):
+                    arr = line.split(":")
+                    if len(arr) > 1:
+                        if len(arr) > 2:
+                            val = arr[2].strip()
+                            if len(val):
+                                delay = float(arr[2])
+                        for key in arr[1]:  # break into individual key
+                            action_sequence.append(KeyboardAction(key, delay))
+                    else:
+                        print("Error at line", line_num, line)
+                else:
+                    print("Error at line", line_num, line)
+        return action_sequence
 
     def command_quit(self):
         self.is_quit = True
@@ -104,12 +151,7 @@ class Application(tk.Frame):
         self.bt_start.config(text=text)
 
         if self.is_start:
-            self.action_sequence = list()
-            if self.mouse_only:
-                self.action_sequence.append(MouseAction("left", 1.0 / self.cps))
-            else:
-                for key in self.keys:
-                    self.action_sequence.append(KeyboardAction(key, 1.0 / self.cps))
+            self.action_sequence = self.load_auto_click_sequence(self.sequence_filename)
 
     def my_click_thread_function(self):
         was_stop = True
@@ -124,8 +166,7 @@ class Application(tk.Frame):
                     was_stop = False
                     index = 0           # reset from the start
 
-                action = self.action_sequence[index]
-                action.execute(self.verbose)
+                self.action_sequence[index].execute(self.verbose)
 
                 index = (index + 1) % len(self.action_sequence)
             else:
