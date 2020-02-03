@@ -1,0 +1,5 @@
+# example m==mouse, k:keyboard
+# m:<left|middle|right>[:time_in_sec]
+# k:[key*][:time_in_sec]
+m:left
+k:wab :0.05
