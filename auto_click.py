@@ -4,102 +4,147 @@ import tkinter as tk
 import threading
 
 
-is_quit = False
-is_start = False
-cps = 5
+class Action:
+    def __init__(self, name: str, delay: float):
+        self.name, self.delay = name, delay
+
+    def execute(self, verbose=False):
+        pass
+
+
+class MouseAction(Action):
+    def __init__(self, name: str, delay: float):
+        super().__init__(name, delay)
+        if name not in ["left", "middle", "right"]:
+            exit("invalid mouse action")
+
+    def execute(self, verbose=False):
+        mouse_x, mouse_y = pyautogui.position()
+        pyautogui.click(x=mouse_x, y=mouse_y, button=self.name)
+        if verbose:
+            print("mouse click", self.name, "delay", self.delay)
+        time.sleep(self.delay)
+
+
+class KeyboardAction(Action):
+    def __init__(self, name: str, delay: float):
+        super().__init__(name, delay)
+        if len(name) != 1:
+            exit("Invalid keyboard action. Expect 1 key " + name)
+
+    def execute(self, verbose=False):
+        pyautogui.press(self.name)
+        if verbose:
+            print("keyboard", self.name, "delay", self.delay)
+        time.sleep(self.delay)
+
 
 class Application(tk.Frame):
-    def __init__(self, master=None):
+    def __init__(self, master):
         super().__init__(master)
         self.master = master
         self.pack()
-        self.create_widgets()
-        
+        self.mouse_only = False
+        self.keys = "ABC"
+        self.action_sequence = list()
+        self.verbose = True
+        self.cps = 8    # Clicks Per Second
+        self.is_start = False
+        self.is_quit = False
 
-    def create_widgets(self):
-        self.bt_down = tk.Button(self, text="<<", command=self.command_down)
-        self.bt_down.pack(side="left")
+        bt_down = tk.Button(self, text="<<", command=self.command_down)
+        bt_down.pack(side="left")
 
-        self.cps_label = tk.Label(self, text="%d" %cps)
+        self.cps_label = tk.Label(self, text="%d" % self.cps)
         self.cps_label.pack(side="left")
-        
-        self.bt_up = tk.Button(self, text=">>", command=self.command_up)
-        self.bt_up.pack(side="left")
+
+        bt_up = tk.Button(self, text=">>", command=self.command_up)
+        bt_up.pack(side="left")
 
         self.bt_start = tk.Button(self, text="START", command=self.command_start_stop)
         self.bt_start.pack(side="left")
 
         self.quit = tk.Button(self, text="QUIT", fg="red", command=self.command_quit)
         self.quit.pack(side="left")
-        
-        self.click_thread = threading.Thread(target=self.my_click_function)
+
+        self.click_thread = threading.Thread(target=self.my_click_thread_function)
         self.click_thread.start()
 
     def command_quit(self):
-        global is_quit
-        is_quit = True
+        self.is_quit = True
         self.click_thread.join()
         self.master.destroy()
 
     def command_up(self):
-        global cps
-        cps = cps + 1
+
+        self.cps = self.cps + 1
         self.set_cps_label()
 
     def set_cps_label(self):
-        global cps
-        self.cps_label.config(text="%d" % cps)
-        
+        self.cps_label.config(text="%d" % self.cps)
 
     def command_down(self):
-        global cps
-        val = cps - 1
+
+        val = self.cps - 1
         if val < 1:
             val = 1
-        cps = val
+        self.cps = val
         self.set_cps_label()
-        
+
     def command_start_stop(self):
-        global is_start
-        is_start = not is_start
-        if is_start:
-            root.overrideredirect(1)
+        self.is_start = not self.is_start
+
+        # top tip show
+        if self.is_start:
+            self.master.overrideredirect(1)
         else:
-            root.overrideredirect(0)
-        text = "STOP" if is_start else "START"
+            self.master.overrideredirect(0)
+
+        text = "STOP" if self.is_start else "START"
         self.bt_start.config(text=text)
-        
-        
-    def my_click_function(self):
-        global is_quit, is_start, cps
+
+        if self.is_start:
+            self.action_sequence = list()
+            if self.mouse_only:
+                self.action_sequence.append(MouseAction("left", 1.0 / self.cps))
+            else:
+                for key in self.keys:
+                    self.action_sequence.append(KeyboardAction(key, 1.0 / self.cps))
+
+    def my_click_thread_function(self):
         was_stop = True
+        index = 0
         while True:
-            if is_quit:
+            if self.is_quit:
                 # print("quit")
                 break
-            if is_start:
-                if was_stop: 
-                    time.sleep(1) # short delay before starting it
+            if self.is_start:
+                if was_stop:
+                    time.sleep(1)       # short delay before starting it
                     was_stop = False
-                moveToX, moveToY = pyautogui.position()
-                pyautogui.click(x=moveToX, y=moveToY, button='left')
-                delay = 1 / cps
-                # print("Click", delay)
-                time.sleep(delay)                
+                    index = 0           # reset from the start
+
+                action = self.action_sequence[index]
+                action.execute(self.verbose)
+
+                index = (index + 1) % len(self.action_sequence)
             else:
                 was_stop = True
                 time.sleep(0.4)
                 # print("Sleep")
 
-            
 
-root = tk.Tk()
+def main():
+    root = tk.Tk()
+    root.title("CAR Auto clicker")
+    # this removes the maximize button
+    root.lift()
+    root.attributes('-topmost', True)
+    # root.resizable(0,0)
+    root.attributes("-toolwindow", 1)
+    app = Application(master=root)
+    app.mainloop()
 
-root.title("CAR Auto clicker")
-# this removes the maximize button
-root.lift()
-root.attributes('-topmost', True)
-# root.resizable(0,0)
-root.attributes("-toolwindow",1)
-app = Application(master=root)
-app.mainloop()
+
+if __name__ == '__main__':
+    main()
